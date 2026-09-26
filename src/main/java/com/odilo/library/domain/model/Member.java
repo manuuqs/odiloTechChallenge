@@ -2,7 +2,7 @@ package com.odilo.library.domain.model;
 
 import java.util.Objects;
 
-public final class Member {
+public class Member {
 
     private final MemberId id;
     private final String name;
