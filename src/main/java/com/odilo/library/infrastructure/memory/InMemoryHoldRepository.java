@@ -12,10 +12,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class InMemoryHoldRepository implements HoldRepository {
 
     private final ConcurrentMap<HoldId, Hold> holds = new ConcurrentHashMap<>();
+    private final ConcurrentMap<HoldId, Long> arrivalOrder = new ConcurrentHashMap<>();
+    private final AtomicLong nextArrival = new AtomicLong();
 
     @Override
     public Optional<Hold> findById(HoldId id) {
@@ -63,7 +66,12 @@ public final class InMemoryHoldRepository implements HoldRepository {
     @Override
     public void save(Hold hold) {
         Objects.requireNonNull(hold, "hold cannot be null");
-        holds.put(hold.id(), hold);
+        holds.compute(hold.id(), (id, existing) -> {
+            if (existing == null) {
+                arrivalOrder.put(id, nextArrival.getAndIncrement());
+            }
+            return hold;
+        });
     }
 
     private boolean isActive(Hold hold) {
@@ -74,6 +82,6 @@ public final class InMemoryHoldRepository implements HoldRepository {
     private Comparator<Hold> byCreationTime() {
         return Comparator
                 .comparing(Hold::createdAt)
-                .thenComparing(hold -> hold.id().value());
+                .thenComparingLong(hold -> arrivalOrder.get(hold.id()));
     }
 }

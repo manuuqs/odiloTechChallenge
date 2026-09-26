@@ -2,6 +2,8 @@ package com.odilo.library.application;
 
 import com.odilo.library.domain.exception.DomainException;
 import com.odilo.library.domain.model.Copy;
+import com.odilo.library.domain.model.Hold;
+import com.odilo.library.domain.model.HoldId;
 import com.odilo.library.domain.model.Loan;
 import com.odilo.library.domain.model.LoanId;
 import com.odilo.library.domain.model.Member;
@@ -81,6 +83,35 @@ public final class LibraryService {
             copies.save(copy);
             loans.save(loan);
             return loan;
+        }
+    }
+
+    public Hold placeHold(MemberId memberId, TitleId titleId) {
+        Objects.requireNonNull(memberId, "member ID cannot be null");
+        Objects.requireNonNull(titleId, "title ID cannot be null");
+
+        // prestamo e incorporacion a cola emplean mimso bloqueo para evitar que se pueda prestar una copia mientras otro miembro solicita un hold,
+        // y viceversa, evitando que se pueda prestar la última copia mientras otro miembro solicita un hold// inserting a hold while another request assigns the last copy.
+        synchronized (copies) {
+            members.findById(memberId).orElseThrow(() -> new DomainException("member not found"));
+            titles.findById(titleId).orElseThrow(() -> new DomainException("title not found"));
+
+            if (holds.existsActiveByMemberAndTitle(memberId, titleId)) {
+                throw new DomainException("member already has an active hold for this title");
+            }
+            boolean alreadyBorrowed = loans.findActiveByMemberId(memberId).stream()
+                    .anyMatch(loan -> copies.findById(loan.copyId())
+                            .filter(copy -> copy.titleId().equals(titleId)).isPresent());
+            if (alreadyBorrowed) {
+                throw new DomainException("member already has this title on loan");
+            }
+            if (!copies.findAvailableByTitleId(titleId).isEmpty()) {
+                throw new DomainException("copy available; borrow instead");
+            }
+
+            Hold hold = new Hold(new HoldId(UUID.randomUUID().toString()), memberId, titleId, clock.instant());
+            holds.save(hold);
+            return hold;
         }
     }
 }

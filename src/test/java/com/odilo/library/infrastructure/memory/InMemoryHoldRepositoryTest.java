@@ -24,8 +24,8 @@ class InMemoryHoldRepositoryTest {
     @Test
     void returnsActiveHoldsInFifoOrderAndExcludesCompletedOnes() {
         HoldRepository holds = new InMemoryHoldRepository();
-        Hold first = hold("hold-1", "member-1", START);
-        Hold tiedLater = hold("hold-2", "member-2", START);
+        Hold first = hold("hold-z", "member-1", START);
+        Hold tiedLater = hold("hold-a", "member-2", START);
         Hold later = hold("hold-3", "member-3", START.plusSeconds(1));
         Hold collected = hold("hold-4", "member-4", START.plusSeconds(2));
         Hold expired = hold("hold-5", "member-5", START.plusSeconds(3));
@@ -36,9 +36,10 @@ class InMemoryHoldRepositoryTest {
         expired.expireAt(START.plus(48, ChronoUnit.HOURS));
         holds.save(later);
         holds.save(expired);
-        holds.save(tiedLater);
         holds.save(collected);
         holds.save(first);
+        holds.save(tiedLater);
+        holds.save(first); // Updating the same hold must not move it to the back.
 
         List<Hold> active = holds.findActiveByTitleId(TITLE);
         assertEquals(List.of(first, tiedLater, later), active);
