@@ -10,6 +10,7 @@ import com.odilo.library.domain.model.Loan;
 import com.odilo.library.domain.model.LoanId;
 import com.odilo.library.domain.model.Member;
 import com.odilo.library.domain.model.MemberId;
+import com.odilo.library.domain.model.Money;
 import com.odilo.library.domain.model.TitleId;
 import com.odilo.library.domain.policy.PolicyProvider;
 import com.odilo.library.domain.policy.TierPolicy;
@@ -148,6 +149,8 @@ public final class LibraryService {
             if (now.isBefore(loan.startedAt())) {
                 throw new DomainException("return time cannot precede loan start");
             }
+            Member borrower = members.findById(loan.memberId())
+                    .orElseThrow(() -> new DomainException("member not found"));
             expireOverdueHolds(copy.titleId(), now); // procesa las reservas asignadas cuyo plazo ya venció.
             //buscamos la siguiente reserva pendiente de la misma obra,
             // si existe asignamos la copia devuelta a esa reserva y marcamos la copia como HOLD, si no existe marcamos la copia como disponible
@@ -165,6 +168,10 @@ public final class LibraryService {
                 expiration = now.plus(pickupWindow); // la fecha de expiración de la reserva es la fecha actual más el tiempo de recogida permitido (cuarenta y ocho horas por defecto)
             }
 
+            // calculamos la multa por devolución tardía, si corresponde, y actualizamos el saldo pendiente del miembro
+            Money fine = policies.finePolicy().fineFor(loan.dueAt(), now);
+            Money newBalance = borrower.outstandingBalance().add(fine);
+
             loan.markReturned(now);
             if (next == null) {
                 copy.markAvailableFromLoan();
@@ -175,6 +182,10 @@ public final class LibraryService {
             }
             loans.save(loan);
             copies.save(copy);
+            if (!fine.equals(Money.ZERO)) {
+                borrower.updateOutstandingBalance(newBalance);
+                members.save(borrower);
+            }
             return Optional.ofNullable(next);
         }
     }

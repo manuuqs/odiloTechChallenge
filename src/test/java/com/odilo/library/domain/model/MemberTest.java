@@ -43,4 +43,16 @@ class MemberTest {
         assertThrows(NullPointerException.class, () -> member.updateOutstandingBalance(null));
         assertEquals(debt, member.outstandingBalance());
     }
+
+    @Test
+    void newFineAccumulatesWithOutstandingBalance() {
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STUDENT);
+        member.updateOutstandingBalance(new Money(new BigDecimal("9.95")));
+
+        member.addOutstandingBalance(new Money(new BigDecimal("0.20")));
+
+        assertEquals(new Money(new BigDecimal("10.15")), member.outstandingBalance());
+        assertThrows(NullPointerException.class, () -> member.addOutstandingBalance(null));
+        assertEquals(new Money(new BigDecimal("10.15")), member.outstandingBalance());
+    }
 }

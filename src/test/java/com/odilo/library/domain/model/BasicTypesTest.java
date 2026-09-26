@@ -43,4 +43,17 @@ class BasicTypesTest {
         assertThrows(IllegalArgumentException.class, () -> new Money(new BigDecimal("-0.01")));
         assertThrows(IllegalArgumentException.class, () -> new Money(new BigDecimal("0.001")));
     }
+
+    @Test
+    void moneyAddsAndMultipliesExactCentsWithoutChangingOperands() {
+        Money first = new Money(new BigDecimal("1.05"));
+        Money second = new Money(new BigDecimal("0.20"));
+
+        assertEquals(new Money(new BigDecimal("1.25")), first.add(second));
+        assertEquals(new Money(new BigDecimal("0.60")), second.multiply(3));
+        assertEquals(Money.ZERO, second.multiply(0));
+        assertEquals(new Money(new BigDecimal("1.05")), first);
+        assertThrows(NullPointerException.class, () -> first.add(null));
+        assertThrows(IllegalArgumentException.class, () -> second.multiply(-1));
+    }
 }

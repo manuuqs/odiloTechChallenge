@@ -38,4 +38,8 @@ public class Member {
     public void updateOutstandingBalance(Money amount) {
         outstandingBalance = Objects.requireNonNull(amount, "outstanding balance cannot be null");
     }
+
+    public void addOutstandingBalance(Money amount) {
+        outstandingBalance = outstandingBalance.add(amount);
+    }
 }

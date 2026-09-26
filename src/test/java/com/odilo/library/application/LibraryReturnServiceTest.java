@@ -74,11 +74,72 @@ class LibraryReturnServiceTest {
         assertEquals(NOW, loan.returnedAt().orElseThrow());
         assertEquals(CopyStatus.AVAILABLE, copies.findById(COPY_ID).orElseThrow().status());
         assertEquals(0, loans.countActiveByMemberId(BORROWER));
+        assertEquals(new Money(new BigDecimal("20.00")), borrower.outstandingBalance());
         assertThrows(DomainException.class, () -> service().returnLoan(loan.id()));
 
         MemberId nextBorrower = new MemberId("member-2");
         members.save(new Member(nextBorrower, "Pat", Tier.STUDENT));
         assertEquals(COPY_ID, service().borrow(nextBorrower, TITLE).copyId());
+    }
+
+    @Test
+    void returningExactlyAtDueDateDoesNotChargeAnExistingBalance() {
+        Loan loan = borrowOnlyCopy();
+        Member borrower = members.findById(BORROWER).orElseThrow();
+        borrower.updateOutstandingBalance(new Money(new BigDecimal("1.00")));
+
+        serviceAt(loan.dueAt()).returnLoan(loan.id());
+
+        assertEquals(new Money(new BigDecimal("1.00")), borrower.outstandingBalance());
+        assertEquals(loan.dueAt(), loan.returnedAt().orElseThrow());
+    }
+
+    @Test
+    void returningBeforeFullOverdueDayDoesNotCharge() {
+        Loan loan = borrowOnlyCopy();
+        Instant returnedAt = loan.dueAt().plus(1, ChronoUnit.DAYS).minusNanos(1);
+
+        serviceAt(returnedAt).returnLoan(loan.id());
+
+        assertEquals(Money.ZERO, members.findById(BORROWER).orElseThrow().outstandingBalance());
+        assertEquals(returnedAt, loan.returnedAt().orElseThrow());
+    }
+
+    @Test
+    void overdueReturnAddsCurrentPolicyFineToExistingDebtOnlyOnce() {
+        Loan loan = borrowOnlyCopy();
+        Member borrower = members.findById(BORROWER).orElseThrow();
+        borrower.updateOutstandingBalance(new Money(new BigDecimal("10.00")));
+        policies.updateFinePolicy(new FinePolicy(new Money(new BigDecimal("0.35")),
+                new Money(new BigDecimal("10.00"))));
+        Instant returnedAt = loan.dueAt().plus(2, ChronoUnit.DAYS).plusSeconds(1);
+
+        serviceAt(returnedAt).returnLoan(loan.id());
+
+        assertEquals(new Money(new BigDecimal("10.70")), borrower.outstandingBalance());
+        assertEquals(new Money(new BigDecimal("10.70")),
+                members.findById(BORROWER).orElseThrow().outstandingBalance());
+        assertEquals(returnedAt, loan.returnedAt().orElseThrow());
+        assertThrows(DomainException.class, () -> serviceAt(returnedAt).returnLoan(loan.id()));
+        assertEquals(new Money(new BigDecimal("10.70")), borrower.outstandingBalance());
+        assertThrows(DomainException.class, () -> serviceAt(returnedAt).borrow(BORROWER, TITLE));
+    }
+
+    @Test
+    void overdueReturnAssignsWaitingMemberAndChargesOnlyTheBorrower() {
+        Loan loan = borrowOnlyCopy();
+        MemberId waiting = new MemberId("member-2");
+        members.save(new Member(waiting, "Pat", Tier.STUDENT));
+        service().placeHold(waiting, TITLE);
+        Instant returnedAt = loan.dueAt().plus(1, ChronoUnit.DAYS);
+
+        Hold assigned = serviceAt(returnedAt).returnLoan(loan.id()).orElseThrow();
+
+        assertEquals(HoldStatus.ASSIGNED, assigned.status());
+        assertEquals(CopyStatus.HELD, copies.findById(COPY_ID).orElseThrow().status());
+        assertEquals(new Money(new BigDecimal("0.20")),
+                members.findById(BORROWER).orElseThrow().outstandingBalance());
+        assertEquals(Money.ZERO, members.findById(waiting).orElseThrow().outstandingBalance());
     }
 
     @Test
@@ -180,12 +241,14 @@ class LibraryReturnServiceTest {
                 return Duration.ZERO;
             }
         };
-        LibraryService service = new LibraryService(titles, copies, members, loans, holds, invalid, clock);
+        LibraryService service = new LibraryService(titles, copies, members, loans, holds, invalid,
+                Clock.fixed(loan.dueAt().plus(1, ChronoUnit.DAYS), ZoneOffset.UTC));
 
         assertThrows(DomainException.class, () -> service.returnLoan(loan.id()));
         assertTrue(loan.returnedAt().isEmpty());
         assertEquals(CopyStatus.ON_LOAN, copies.findById(COPY_ID).orElseThrow().status());
         assertEquals(HoldStatus.WAITING, waiting.status());
+        assertEquals(Money.ZERO, members.findById(BORROWER).orElseThrow().outstandingBalance());
     }
 
     @Test
@@ -197,12 +260,13 @@ class LibraryReturnServiceTest {
         members.save(new Member(secondMember, "Lee", Tier.STUDENT));
         Hold firstHold = service().placeHold(firstMember, TITLE);
         Hold secondHold = service().placeHold(secondMember, TITLE);
+        Instant returnedAt = loan.dueAt().plus(1, ChronoUnit.DAYS);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch go = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<Boolean> first = executor.submit(attemptReturn(service(), loan.id(), ready, go));
-            Future<Boolean> second = executor.submit(attemptReturn(service(), loan.id(), ready, go));
+            Future<Boolean> first = executor.submit(attemptReturn(serviceAt(returnedAt), loan.id(), ready, go));
+            Future<Boolean> second = executor.submit(attemptReturn(serviceAt(returnedAt), loan.id(), ready, go));
             assertTrue(ready.await(5, TimeUnit.SECONDS));
             go.countDown();
 
@@ -212,7 +276,9 @@ class LibraryReturnServiceTest {
             assertEquals(HoldStatus.ASSIGNED, firstHold.status());
             assertEquals(HoldStatus.WAITING, secondHold.status());
             assertEquals(CopyStatus.HELD, copies.findById(COPY_ID).orElseThrow().status());
-            assertEquals(NOW, loan.returnedAt().orElseThrow());
+            assertEquals(returnedAt, loan.returnedAt().orElseThrow());
+            assertEquals(new Money(new BigDecimal("0.20")),
+                    members.findById(BORROWER).orElseThrow().outstandingBalance());
         } finally {
             go.countDown();
             executor.shutdownNow();
@@ -245,5 +311,10 @@ class LibraryReturnServiceTest {
 
     private LibraryService service() {
         return new LibraryService(titles, copies, members, loans, holds, policies, clock);
+    }
+
+    private LibraryService serviceAt(Instant at) {
+        return new LibraryService(titles, copies, members, loans, holds, policies,
+                Clock.fixed(at, ZoneOffset.UTC));
     }
 }

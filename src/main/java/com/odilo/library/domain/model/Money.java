@@ -16,4 +16,15 @@ public record Money(BigDecimal amount) {
         }
         amount = amount.setScale(2, RoundingMode.UNNECESSARY);
     }
+
+    public Money add(Money other) {
+        return new Money(amount.add(Objects.requireNonNull(other, "other amount cannot be null").amount()));
+    }
+
+    public Money multiply(long factor) {
+        if (factor < 0) {
+            throw new IllegalArgumentException("factor cannot be negative");
+        }
+        return new Money(amount.multiply(BigDecimal.valueOf(factor)));
+    }
 }
