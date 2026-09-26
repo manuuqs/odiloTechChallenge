@@ -64,4 +64,16 @@ public final class Loan {
         }
         returnedAt = at;
     }
+
+    public void renewUntil(Instant newDueAt) {
+        Objects.requireNonNull(newDueAt, "new due time cannot be null");
+        if (returnedAt != null) {
+            throw new DomainException("returned loan cannot be renewed");
+        }
+        if (!newDueAt.isAfter(dueAt)) {
+            throw new IllegalArgumentException("new due time must be after current due time");
+        }
+        dueAt = newDueAt;
+        renewalCount++;
+    }
 }

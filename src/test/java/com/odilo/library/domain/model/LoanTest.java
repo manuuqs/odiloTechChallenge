@@ -45,6 +45,26 @@ class LoanTest {
     }
 
     @Test
+    void renewalAdvancesDueDateAndCountOnlyForValidActiveLoans() {
+        Loan loan = loan();
+        Instant originalDue = loan.dueAt();
+
+        assertThrows(NullPointerException.class, () -> loan.renewUntil(null));
+        assertThrows(IllegalArgumentException.class, () -> loan.renewUntil(originalDue));
+        assertThrows(IllegalArgumentException.class, () -> loan.renewUntil(originalDue.minusSeconds(1)));
+        assertEquals(originalDue, loan.dueAt());
+        assertEquals(0, loan.renewalCount());
+
+        loan.renewUntil(originalDue.plusSeconds(14 * 24 * 60 * 60));
+        assertEquals(originalDue.plusSeconds(14 * 24 * 60 * 60), loan.dueAt());
+        assertEquals(1, loan.renewalCount());
+
+        loan.markReturned(START.plusSeconds(1));
+        assertThrows(DomainException.class, () -> loan.renewUntil(loan.dueAt().plusSeconds(1)));
+        assertEquals(1, loan.renewalCount());
+    }
+
+    @Test
     void rejectsInvalidDatesWithoutChangingTheLoan() {
         assertThrows(IllegalArgumentException.class,
                 () -> new Loan(new LoanId("loan-1"), new MemberId("member-1"), new CopyId("copy-1"), START, START));

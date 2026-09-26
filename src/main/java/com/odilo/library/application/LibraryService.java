@@ -21,6 +21,7 @@ import com.odilo.library.domain.repository.TitleRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.Optional;
@@ -175,6 +176,56 @@ public final class LibraryService {
             loans.save(loan);
             copies.save(copy);
             return Optional.ofNullable(next);
+        }
+    }
+
+    // renueva un préstamo activo, si el préstamo está vencido, si el miembro tiene deuda superior a 10,00 €,
+    // si otro miembro tiene una reserva pendiente de la misma obra o si se ha alcanzado el límite de renovaciones según el nivel del miembro, se lanza una excepción
+    public Loan renew(LoanId loanId) {
+        Objects.requireNonNull(loanId, "loan ID cannot be null");
+
+        synchronized (copies) {
+            Loan loan = loans.findById(loanId)
+                    .orElseThrow(() -> new DomainException("loan not found"));
+            if (loan.returnedAt().isPresent()) {
+                throw new DomainException("returned loan cannot be renewed");
+            }
+            Copy copy = copies.findById(loan.copyId())
+                    .orElseThrow(() -> new DomainException("loan copy not found"));
+            if (copy.status() != CopyStatus.ON_LOAN || loans.findActiveByCopyId(copy.id())
+                    .filter(active -> active.id().equals(loanId)).isEmpty()) {
+                throw new DomainException("copy and active loan are inconsistent");
+            }
+            Member member = members.findById(loan.memberId())
+                    .orElseThrow(() -> new DomainException("member not found"));
+
+            Instant now = clock.instant();
+            if (now.isBefore(loan.startedAt())) {
+                throw new DomainException("renewal time cannot precede loan start");
+            }
+            // se aplica para evitar que una reserva asignada pero ya vencida siga bloqueando una copia o la cola.
+            expireOverdueHolds(copy.titleId(), now);
+            if (!now.isBefore(loan.dueAt())) {
+                throw new DomainException("overdue loan cannot be renewed");
+            }
+            if (member.outstandingBalance().amount()
+                    .compareTo(policies.finePolicy().borrowingBlockThreshold().amount()) > 0) {
+                throw new DomainException("outstanding fines block renewals");
+            }
+            if (holds.findWaitingByTitleId(copy.titleId()).stream()
+                    .anyMatch(hold -> !hold.memberId().equals(member.id()))) {
+                throw new DomainException("another member is waiting for this title");
+            }
+
+            TierPolicy policy = policies.tierPolicy(member.tier());
+            if (policy.maximumRenewals().isPresent()
+                    && loan.renewalCount() >= policy.maximumRenewals().getAsInt()) {
+                throw new DomainException("loan has reached the renewal limit");
+            }
+
+            loan.renewUntil(loan.dueAt().plus(policy.loanDurationDays(), ChronoUnit.DAYS));
+            loans.save(loan);
+            return loan;
         }
     }
 
