@@ -26,7 +26,9 @@ class BasicTypesTest {
         return Stream.of(
                 Arguments.of("title", (Function<String, ?>) TitleId::new),
                 Arguments.of("copy", (Function<String, ?>) CopyId::new),
-                Arguments.of("member", (Function<String, ?>) MemberId::new));
+                Arguments.of("member", (Function<String, ?>) MemberId::new),
+                Arguments.of("loan", (Function<String, ?>) LoanId::new),
+                Arguments.of("hold", (Function<String, ?>) HoldId::new));
     }
 
     @Test

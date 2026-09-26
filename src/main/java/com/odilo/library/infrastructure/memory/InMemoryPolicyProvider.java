@@ -6,6 +6,7 @@ import com.odilo.library.domain.policy.FinePolicy;
 import com.odilo.library.domain.policy.PolicyProvider;
 import com.odilo.library.domain.policy.TierPolicy;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
@@ -14,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class InMemoryPolicyProvider implements PolicyProvider {
 
     private volatile FinePolicy currentFinePolicy;
+    private volatile Duration holdPickupWindow = Duration.ofHours(48);
     private final Map<Tier, TierPolicy> tierPolicies = new ConcurrentHashMap<>();
 
     public InMemoryPolicyProvider(FinePolicy initialFinePolicy) {
@@ -39,6 +41,11 @@ public final class InMemoryPolicyProvider implements PolicyProvider {
         return tierPolicies.get(Objects.requireNonNull(tier, "tier cannot be null"));
     }
 
+    @Override
+    public Duration holdPickupWindow() {
+        return holdPickupWindow;
+    }
+
     public void updateFinePolicy(FinePolicy finePolicy) {
         currentFinePolicy = Objects.requireNonNull(finePolicy, "fine policy cannot be null");
     }
@@ -46,5 +53,13 @@ public final class InMemoryPolicyProvider implements PolicyProvider {
     public void updateTierPolicy(TierPolicy tierPolicy) {
         Objects.requireNonNull(tierPolicy, "tier policy cannot be null");
         tierPolicies.put(tierPolicy.tier(), tierPolicy);
+    }
+
+    public void updateHoldPickupWindow(Duration window) {
+        Objects.requireNonNull(window, "hold pickup window cannot be null");
+        if (window.isNegative() || window.isZero()) {
+            throw new IllegalArgumentException("hold pickup window must be positive");
+        }
+        holdPickupWindow = window;
     }
 }

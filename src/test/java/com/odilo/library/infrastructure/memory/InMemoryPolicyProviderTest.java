@@ -9,6 +9,7 @@ import com.odilo.library.domain.policy.FinePolicy;
 import com.odilo.library.domain.policy.PolicyProvider;
 import com.odilo.library.domain.policy.TierPolicy;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
 
@@ -67,5 +68,19 @@ class InMemoryPolicyProviderTest {
         PolicyProvider provider = InMemoryPolicyProvider.withChallengeDefaults();
 
         assertThrows(NullPointerException.class, () -> provider.tierPolicy(null));
+    }
+
+    @Test
+    void holdPickupWindowCanChangeWithoutRecreatingTheProvider() {
+        InMemoryPolicyProvider configurable = InMemoryPolicyProvider.withChallengeDefaults();
+        PolicyProvider consumer = configurable;
+
+        assertEquals(Duration.ofHours(48), consumer.holdPickupWindow());
+        configurable.updateHoldPickupWindow(Duration.ofHours(24));
+        assertEquals(Duration.ofHours(24), consumer.holdPickupWindow());
+        assertThrows(IllegalArgumentException.class, () -> configurable.updateHoldPickupWindow(Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> configurable.updateHoldPickupWindow(Duration.ofHours(-1)));
+        assertThrows(NullPointerException.class, () -> configurable.updateHoldPickupWindow(null));
+        assertEquals(Duration.ofHours(24), consumer.holdPickupWindow());
     }
 }
