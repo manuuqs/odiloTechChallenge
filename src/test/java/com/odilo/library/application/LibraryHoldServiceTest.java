@@ -9,6 +9,8 @@ import com.odilo.library.domain.model.Copy;
 import com.odilo.library.domain.model.CopyId;
 import com.odilo.library.domain.model.Hold;
 import com.odilo.library.domain.model.HoldStatus;
+import com.odilo.library.domain.model.Loan;
+import com.odilo.library.domain.model.LoanId;
 import com.odilo.library.domain.model.Member;
 import com.odilo.library.domain.model.MemberId;
 import com.odilo.library.domain.model.Money;
@@ -30,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -96,6 +99,21 @@ class LibraryHoldServiceTest {
 
         assertThrows(DomainException.class, () -> service().placeHold(member.id(), TITLE));
         assertTrue(holds.findWaitingByTitleId(TITLE).isEmpty());
+    }
+
+    @Test
+    void placingHoldRejectsActiveLoanWhoseCopyDoesNotExist() {
+        titles.save(new Title(TITLE, "Clean Code"));
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
+        members.save(member);
+        loans.save(new Loan(new LoanId("orphan-loan"), member.id(), new CopyId("missing-copy"),
+                NOW, NOW.plus(14, ChronoUnit.DAYS)));
+
+        DomainException rejected = assertThrows(DomainException.class,
+                () -> service().placeHold(member.id(), TITLE));
+
+        assertEquals("active loan copy not found: missing-copy", rejected.getMessage());
+        assertTrue(holds.findActiveByTitleId(TITLE).isEmpty());
     }
 
     @Test

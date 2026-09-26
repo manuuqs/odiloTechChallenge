@@ -97,4 +97,16 @@ public final class Hold {
         }
         status = HoldStatus.EXPIRED;
     }
+
+    //cancelar anticipadanete una reserva asignadaasignada
+    public void forfeitAt(Instant at) {
+        Objects.requireNonNull(at, "forfeit time cannot be null");
+        if (status != HoldStatus.ASSIGNED) {
+            throw new DomainException("only an assigned hold can be forfeited");
+        }
+        if (at.isBefore(assignedAt) || !at.isBefore(expiresAt)) {
+            throw new IllegalArgumentException("forfeit time must be within the pickup window");
+        }
+        status = HoldStatus.EXPIRED;
+    }
 }

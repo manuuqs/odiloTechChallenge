@@ -33,6 +33,7 @@ import com.odilo.library.infrastructure.memory.InMemoryTitleRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.concurrent.Callable;
@@ -41,6 +42,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class LibraryServiceTest {
@@ -73,6 +75,77 @@ class LibraryServiceTest {
         assertEquals(loan, loans.findActiveByCopyId(first.id()).orElseThrow());
         assertEquals(1, loans.countActiveByMemberId(member.id()));
         assertThrows(DomainException.class, () -> service().borrow(member.id(), TITLE));
+    }
+
+    @Test
+    void borrowingUsesOneClockReadingForExpiryAndLoanStart() {
+        titles.save(new Title(TITLE, "Clean Code"));
+        copies.save(new Copy(new CopyId("copy-1"), TITLE));
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
+        members.save(member);
+        AtomicInteger clockReads = new AtomicInteger();
+        LibraryService service = serviceWithClock(advancingClock(clockReads, ZoneOffset.UTC));
+
+        Loan loan = service.borrow(member.id(), TITLE);
+
+        assertEquals(NOW, loan.startedAt());
+        assertEquals(NOW.plus(14, ChronoUnit.DAYS), loan.dueAt());
+        assertEquals(1, clockReads.get());
+    }
+
+    @Test
+    void placingHoldUsesOneClockReadingForExpiryAndCreation() {
+        titles.save(new Title(TITLE, "Clean Code"));
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
+        members.save(member);
+        AtomicInteger clockReads = new AtomicInteger();
+        LibraryService service = serviceWithClock(advancingClock(clockReads, ZoneOffset.UTC));
+
+        Hold hold = service.placeHold(member.id(), TITLE);
+
+        assertEquals(NOW, hold.createdAt());
+        assertEquals(1, clockReads.get());
+    }
+
+    @Test
+    void borrowingRejectsActiveLoanWhoseCopyDoesNotExist() {
+        titles.save(new Title(TITLE, "Clean Code"));
+        Copy available = new Copy(new CopyId("copy-1"), TITLE);
+        copies.save(available);
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
+        members.save(member);
+        loans.save(new Loan(new LoanId("orphan-loan"), member.id(), new CopyId("missing-copy"),
+                NOW, NOW.plus(14, ChronoUnit.DAYS)));
+
+        DomainException rejected = assertThrows(DomainException.class,
+                () -> service().borrow(member.id(), TITLE));
+
+        assertEquals("active loan copy not found: missing-copy", rejected.getMessage());
+        assertEquals(CopyStatus.AVAILABLE, available.status());
+        assertEquals(1, loans.countActiveByMemberId(member.id()));
+    }
+
+    @Test
+    void memberCannotBorrowTwoCopiesOfTheSameTitleAtOnce() {
+        titles.save(new Title(TITLE, "Clean Code"));
+        Copy first = new Copy(new CopyId("copy-1"), TITLE);
+        Copy second = new Copy(new CopyId("copy-2"), TITLE);
+        copies.save(first);
+        copies.save(second);
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
+        members.save(member);
+        Loan initial = service().borrow(member.id(), TITLE);
+
+        DomainException rejected = assertThrows(DomainException.class,
+                () -> service().borrow(member.id(), TITLE));
+
+        assertEquals("member already has this title on loan", rejected.getMessage());
+        assertEquals(CopyStatus.AVAILABLE, second.status());
+        assertEquals(1, loans.countActiveByMemberId(member.id()));
+
+        service().returnLoan(initial.id());
+        assertEquals(member.id(), service().borrow(member.id(), TITLE).memberId());
+        assertEquals(1, loans.countActiveByMemberId(member.id()));
     }
 
     @Test
@@ -169,6 +242,29 @@ class LibraryServiceTest {
     }
 
     private LibraryService service() {
-        return new LibraryService(titles, copies, members, loans, holds, policies, clock);
+        return serviceWithClock(clock);
+    }
+
+    private LibraryService serviceWithClock(Clock chosenClock) {
+        return new LibraryService(titles, copies, members, loans, holds, policies, chosenClock);
+    }
+
+    private Clock advancingClock(AtomicInteger reads, ZoneId zone) {
+        return new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return zone;
+            }
+
+            @Override
+            public Clock withZone(ZoneId newZone) {
+                return advancingClock(reads, newZone);
+            }
+
+            @Override
+            public Instant instant() {
+                return NOW.plusSeconds(reads.getAndIncrement());
+            }
+        };
     }
 }

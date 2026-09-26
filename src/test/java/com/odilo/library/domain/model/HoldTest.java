@@ -73,6 +73,22 @@ class HoldTest {
         assertEquals(HoldStatus.ASSIGNED, hold.status());
     }
 
+    @Test
+    void forfeitingDuringPickupWindowEndsTheHoldEarly() {
+        Hold hold = hold();
+        Instant deadline = START.plusSeconds(48 * 60 * 60);
+        assertThrows(DomainException.class, () -> hold.forfeitAt(START));
+
+        hold.assignCopy(COPY_ID, START, deadline);
+        assertThrows(IllegalArgumentException.class, () -> hold.forfeitAt(START.minusNanos(1)));
+        assertThrows(IllegalArgumentException.class, () -> hold.forfeitAt(deadline));
+        assertEquals(HoldStatus.ASSIGNED, hold.status());
+
+        hold.forfeitAt(START.plusSeconds(1));
+        assertEquals(HoldStatus.EXPIRED, hold.status());
+        assertThrows(DomainException.class, () -> hold.forfeitAt(START.plusSeconds(2)));
+    }
+
     private static Hold hold() {
         return new Hold(new HoldId("hold-1"), new MemberId("member-1"), new TitleId("title-1"), START);
     }
