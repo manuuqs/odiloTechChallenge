@@ -169,9 +169,9 @@ class LibraryPickupServiceTest {
         MemberId nextBorrower = SECOND;
         members.save(new Member(nextBorrower, "Lee", Tier.STANDARD));
         Loan secondLoan = serviceAt(NOW).borrow(nextBorrower, TITLE);
+        member.updateOutstandingBalance(new Money(new BigDecimal("10.00")));
         Hold nextHold = serviceAt(NOW).placeHold(FIRST, TITLE);
         serviceAt(NOW).returnLoan(secondLoan.id());
-        member.updateOutstandingBalance(new Money(new BigDecimal("10.00")));
 
         assertEquals(FIRST, serviceAt(NOW).collectHold(nextHold.id()).memberId());
     }

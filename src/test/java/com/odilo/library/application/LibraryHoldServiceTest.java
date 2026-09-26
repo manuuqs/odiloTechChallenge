@@ -55,10 +55,10 @@ class LibraryHoldServiceTest {
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
     @Test
-    void createsWaitingHoldForUnavailableTitleEvenWithOutstandingFines() {
+    void createsWaitingHoldWithOutstandingBalanceExactlyAtThreshold() {
         titles.save(new Title(TITLE, "Clean Code"));
         Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
-        member.updateOutstandingBalance(new Money(new BigDecimal("20.00")));
+        member.updateOutstandingBalance(new Money(new BigDecimal("10.00")));
         members.save(member);
 
         Hold hold = service().placeHold(member.id(), TITLE);
@@ -70,6 +70,39 @@ class LibraryHoldServiceTest {
         assertTrue(hold.assignedCopyId().isEmpty());
         assertEquals(0, loans.countActiveByMemberId(member.id()));
         assertEquals(hold, holds.findById(hold.id()).orElseThrow());
+    }
+
+    @Test
+    void balanceAboveThresholdBlocksJoiningTheQueue() {
+        titles.save(new Title(TITLE, "Clean Code"));
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
+        member.updateOutstandingBalance(new Money(new BigDecimal("10.01")));
+        members.save(member);
+
+        DomainException rejected = assertThrows(DomainException.class,
+                () -> service().placeHold(member.id(), TITLE));
+
+        assertEquals("outstanding fines block holds", rejected.getMessage());
+        assertTrue(holds.findActiveByTitleId(TITLE).isEmpty());
+    }
+
+    @Test
+    void fineFromLateReturnBlocksJoiningAnotherTitlesQueue() {
+        titles.save(new Title(TITLE, "Clean Code"));
+        TitleId otherTitle = new TitleId("title-2");
+        titles.save(new Title(otherTitle, "Refactoring"));
+        copies.save(new Copy(new CopyId("copy-1"), TITLE));
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
+        members.save(member);
+        Loan loan = service().borrow(member.id(), TITLE);
+        member.updateOutstandingBalance(new Money(new BigDecimal("10.00")));
+
+        Instant returnedAt = loan.dueAt().plus(1, ChronoUnit.DAYS);
+        serviceAt(returnedAt).returnLoan(loan.id());
+
+        assertEquals(new Money(new BigDecimal("10.20")), member.outstandingBalance());
+        assertThrows(DomainException.class, () -> serviceAt(returnedAt).placeHold(member.id(), otherTitle));
+        assertTrue(holds.findActiveByTitleId(otherTitle).isEmpty());
     }
 
     @Test
@@ -189,5 +222,10 @@ class LibraryHoldServiceTest {
 
     private LibraryService service() {
         return new LibraryService(titles, copies, members, loans, holds, policies, clock);
+    }
+
+    private LibraryService serviceAt(Instant at) {
+        return new LibraryService(titles, copies, members, loans, holds, policies,
+                Clock.fixed(at, ZoneOffset.UTC));
     }
 }

@@ -97,7 +97,7 @@ public final class LibraryService {
         }
     }
 
-    // solicita una reserva de un título para un miembro, si no hay copias disponibles
+    // solicita una reserva de un título para un miembro
     public Hold placeHold(MemberId memberId, TitleId titleId) {
         Objects.requireNonNull(memberId, "member ID cannot be null");
         Objects.requireNonNull(titleId, "title ID cannot be null");
@@ -106,10 +106,15 @@ public final class LibraryService {
         // y viceversa, evitando que se pueda prestar la última copia mientras otro miembro solicita un hold// inserting a hold while another request assigns the last copy.
         synchronized (copies) {
             Instant now = clock.instant();
-            members.findById(memberId).orElseThrow(() -> new DomainException("member not found"));
+            Member member = members.findById(memberId)
+                    .orElseThrow(() -> new DomainException("member not found"));
             titles.findById(titleId).orElseThrow(() -> new DomainException("title not found"));
             expireOverdueHolds(titleId, now); // procesa las reservas asignadas cuyo plazo ya venció.
 
+            if (member.outstandingBalance().amount()
+                    .compareTo(policies.finePolicy().borrowingBlockThreshold().amount()) > 0) {
+                throw new DomainException("outstanding fines block holds");
+            }
             if (holds.existsActiveByMemberAndTitle(memberId, titleId)) {
                 throw new DomainException("member already has an active hold for this title");
             }
