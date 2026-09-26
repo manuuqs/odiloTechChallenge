@@ -28,9 +28,29 @@ public final class Copy {
     }
 
     public synchronized void markOnLoan() {
-        if (status != CopyStatus.AVAILABLE) {
-            throw new DomainException("copy is not available for loan");
+        transition(CopyStatus.AVAILABLE, CopyStatus.ON_LOAN);
+    }
+
+    public synchronized void markAvailableFromLoan() {
+        transition(CopyStatus.ON_LOAN, CopyStatus.AVAILABLE);
+    }
+
+    public synchronized void markHeld() {
+        transition(CopyStatus.ON_LOAN, CopyStatus.HELD);
+    }
+
+    public synchronized void markAvailableFromHold() {
+        transition(CopyStatus.HELD, CopyStatus.AVAILABLE);
+    }
+
+    public synchronized void markOnLoanFromHold() {
+        transition(CopyStatus.HELD, CopyStatus.ON_LOAN);
+    }
+
+    private void transition(CopyStatus expected, CopyStatus next) {
+        if (status != expected) {
+            throw new DomainException("copy must be " + expected + " to become " + next);
         }
-        status = CopyStatus.ON_LOAN;
+        status = next;
     }
 }

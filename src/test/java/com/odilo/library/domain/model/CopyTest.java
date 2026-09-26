@@ -38,4 +38,35 @@ class CopyTest {
         assertEquals(CopyStatus.ON_LOAN, copy.status());
         assertThrows(DomainException.class, copy::markOnLoan);
     }
+
+    @Test
+    void aReturnedCopyCanBeHeldAndIsNotAvailableUntilReleased() {
+        Copy copy = new Copy(new CopyId("copy-1"), new TitleId("title-1"));
+        assertThrows(DomainException.class, copy::markHeld);
+        copy.markOnLoan();
+        copy.markHeld();
+
+        assertEquals(CopyStatus.HELD, copy.status());
+        assertThrows(DomainException.class, copy::markOnLoan);
+        assertThrows(DomainException.class, copy::markAvailableFromLoan);
+        assertEquals(CopyStatus.HELD, copy.status());
+
+        copy.markAvailableFromHold();
+        assertEquals(CopyStatus.AVAILABLE, copy.status());
+        copy.markOnLoan();
+        copy.markAvailableFromLoan();
+        assertEquals(CopyStatus.AVAILABLE, copy.status());
+    }
+
+    @Test
+    void collectingAReservedCopyTransitionsFromHeldToOnLoan() {
+        Copy copy = new Copy(new CopyId("copy-1"), new TitleId("title-1"));
+        copy.markOnLoan();
+        copy.markHeld();
+
+        copy.markOnLoanFromHold();
+
+        assertEquals(CopyStatus.ON_LOAN, copy.status());
+        assertThrows(DomainException.class, copy::markOnLoanFromHold);
+    }
 }

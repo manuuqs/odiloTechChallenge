@@ -2,6 +2,7 @@ package com.odilo.library.application;
 
 import com.odilo.library.domain.exception.DomainException;
 import com.odilo.library.domain.model.Copy;
+import com.odilo.library.domain.model.CopyStatus;
 import com.odilo.library.domain.model.Hold;
 import com.odilo.library.domain.model.HoldId;
 import com.odilo.library.domain.model.Loan;
@@ -17,9 +18,11 @@ import com.odilo.library.domain.repository.LoanRepository;
 import com.odilo.library.domain.repository.MemberRepository;
 import com.odilo.library.domain.repository.TitleRepository;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 public final class LibraryService {
@@ -112,6 +115,57 @@ public final class LibraryService {
             Hold hold = new Hold(new HoldId(UUID.randomUUID().toString()), memberId, titleId, clock.instant());
             holds.save(hold);
             return hold;
+        }
+    }
+
+    public Optional<Hold> returnLoan(LoanId loanId) {
+        Objects.requireNonNull(loanId, "loan ID cannot be null");
+
+        // copia devuelta no debe hacerse visible para quien la tomo prestada antes de que se asigne la siguiente reserva
+        synchronized (copies) {
+            Loan loan = loans.findById(loanId)
+                    .orElseThrow(() -> new DomainException("loan not found"));
+            if (loan.returnedAt().isPresent()) {
+                throw new DomainException("loan has already been returned");
+            }
+            Copy copy = copies.findById(loan.copyId())
+                    .orElseThrow(() -> new DomainException("loan copy not found"));
+            if (copy.status() != CopyStatus.ON_LOAN || loans.findActiveByCopyId(copy.id())
+                    .filter(active -> active.id().equals(loanId)).isEmpty()) {
+                throw new DomainException("copy and active loan are inconsistent");
+            }
+
+            Instant now = clock.instant();
+            if (now.isBefore(loan.startedAt())) {
+                throw new DomainException("return time cannot precede loan start");
+            }
+            //buscamos la siguiente reserva pendiente de la misma obra,
+            // si existe asignamos la copia devuelta a esa reserva y marcamos la copia como HOLD, si no existe marcamos la copia como disponible
+            Hold next = holds.findWaitingByTitleId(copy.titleId()).stream().findFirst().orElse(null);
+            Instant expiration = null;
+            if (next != null) {
+                if (now.isBefore(next.createdAt())) {
+                    throw new DomainException("hold cannot be assigned before its creation");
+                }
+                Duration pickupWindow = Objects.requireNonNull(policies.holdPickupWindow(),
+                        "hold pickup window cannot be null");
+                if (pickupWindow.isZero() || pickupWindow.isNegative()) {
+                    throw new DomainException("hold pickup window must be positive");
+                }
+                expiration = now.plus(pickupWindow); // la fecha de expiración de la reserva es la fecha actual más el tiempo de recogida permitido (cuarenta y ocho horas por defecto)
+            }
+
+            loan.markReturned(now);
+            if (next == null) {
+                copy.markAvailableFromLoan();
+            } else {
+                next.assignCopy(copy.id(), now, expiration);
+                copy.markHeld();
+                holds.save(next);
+            }
+            loans.save(loan);
+            copies.save(copy);
+            return Optional.ofNullable(next);
         }
     }
 }
