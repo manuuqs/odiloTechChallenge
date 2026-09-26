@@ -1,0 +1,33 @@
+package com.odilo.library.domain.model;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import org.junit.jupiter.api.Test;
+
+class MemberTest {
+
+    @Test
+    void newMemberStartsWithZeroOutstandingBalance() {
+        MemberId id = new MemberId("member-1");
+
+        Member member = new Member(id, "Alex", Tier.STUDENT);
+
+        assertEquals(id, member.id());
+        assertEquals("Alex", member.name());
+        assertEquals(Tier.STUDENT, member.tier());
+        assertEquals(Money.ZERO, member.outstandingBalance());
+    }
+
+    @Test
+    void rejectsMissingIdentifierTierOrInvalidName() {
+        MemberId id = new MemberId("member-1");
+
+        assertThrows(NullPointerException.class, () -> new Member(null, "Alex", Tier.STUDENT));
+        assertThrows(NullPointerException.class, () -> new Member(id, null, Tier.STUDENT));
+        assertThrows(NullPointerException.class, () -> new Member(id, "Alex", null));
+        assertThrows(IllegalArgumentException.class, () -> new Member(id, " ", Tier.STUDENT));
+        assertThrows(IllegalArgumentException.class, () -> new Member(id, " Alex", Tier.STUDENT));
+        assertThrows(IllegalArgumentException.class, () -> new Member(id, "Alex ", Tier.STUDENT));
+    }
+}

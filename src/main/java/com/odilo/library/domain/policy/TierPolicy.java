@@ -16,6 +16,7 @@ public record TierPolicy(Tier tier, int loanDurationDays, int maximumActiveLoans
         if (maximumActiveLoans <= 0) {
             throw new IllegalArgumentException("maximum active loans must be positive");
         }
+        // usaremos OptionalInt para representar renovaciones ilimitadas
         if (maximumRenewals.isPresent() && maximumRenewals.getAsInt() < 0) {
             throw new IllegalArgumentException("maximum renewals cannot be negative");
         }
