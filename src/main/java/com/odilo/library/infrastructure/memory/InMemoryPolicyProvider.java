@@ -1,17 +1,26 @@
 package com.odilo.library.infrastructure.memory;
 
 import com.odilo.library.domain.model.Money;
+import com.odilo.library.domain.model.Tier;
 import com.odilo.library.domain.policy.FinePolicy;
 import com.odilo.library.domain.policy.PolicyProvider;
+import com.odilo.library.domain.policy.TierPolicy;
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class InMemoryPolicyProvider implements PolicyProvider {
 
     private volatile FinePolicy currentFinePolicy;
+    private final Map<Tier, TierPolicy> tierPolicies = new ConcurrentHashMap<>();
 
     public InMemoryPolicyProvider(FinePolicy initialFinePolicy) {
         this.currentFinePolicy = Objects.requireNonNull(initialFinePolicy, "initial fine policy cannot be null");
+        tierPolicies.put(Tier.STANDARD, new TierPolicy(Tier.STANDARD, 14, 3, OptionalInt.of(2)));
+        tierPolicies.put(Tier.STUDENT, new TierPolicy(Tier.STUDENT, 28, 5, OptionalInt.of(3)));
+        tierPolicies.put(Tier.STAFF, new TierPolicy(Tier.STAFF, 56, 10, OptionalInt.empty()));
     }
 
     public static InMemoryPolicyProvider withChallengeDefaults() {
@@ -25,7 +34,17 @@ public final class InMemoryPolicyProvider implements PolicyProvider {
         return currentFinePolicy;
     }
 
+    @Override
+    public TierPolicy tierPolicy(Tier tier) {
+        return tierPolicies.get(Objects.requireNonNull(tier, "tier cannot be null"));
+    }
+
     public void updateFinePolicy(FinePolicy finePolicy) {
         currentFinePolicy = Objects.requireNonNull(finePolicy, "fine policy cannot be null");
+    }
+
+    public void updateTierPolicy(TierPolicy tierPolicy) {
+        Objects.requireNonNull(tierPolicy, "tier policy cannot be null");
+        tierPolicies.put(tierPolicy.tier(), tierPolicy);
     }
 }
