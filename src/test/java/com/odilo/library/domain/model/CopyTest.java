@@ -3,6 +3,7 @@ package com.odilo.library.domain.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.odilo.library.domain.exception.DomainException;
 import org.junit.jupiter.api.Test;
 
 class CopyTest {
@@ -26,5 +27,15 @@ class CopyTest {
     void rejectsMissingCopyOrTitleIdentifier() {
         assertThrows(NullPointerException.class, () -> new Copy(null, new TitleId("title-1")));
         assertThrows(NullPointerException.class, () -> new Copy(new CopyId("copy-1"), null));
+    }
+
+    @Test
+    void cannotLendTheSameCopyTwice() {
+        Copy copy = new Copy(new CopyId("copy-1"), new TitleId("title-1"));
+
+        copy.markOnLoan();
+
+        assertEquals(CopyStatus.ON_LOAN, copy.status());
+        assertThrows(DomainException.class, copy::markOnLoan);
     }
 }

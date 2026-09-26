@@ -3,6 +3,7 @@ package com.odilo.library.domain.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 
 class MemberTest {
@@ -29,5 +30,17 @@ class MemberTest {
         assertThrows(IllegalArgumentException.class, () -> new Member(id, " ", Tier.STUDENT));
         assertThrows(IllegalArgumentException.class, () -> new Member(id, " Alex", Tier.STUDENT));
         assertThrows(IllegalArgumentException.class, () -> new Member(id, "Alex ", Tier.STUDENT));
+    }
+
+    @Test
+    void balanceCanBeUpdatedWithoutAllowingNull() {
+        Member member = new Member(new MemberId("member-1"), "Alex", Tier.STUDENT);
+        Money debt = new Money(new BigDecimal("10.01"));
+
+        member.updateOutstandingBalance(debt);
+
+        assertEquals(debt, member.outstandingBalance());
+        assertThrows(NullPointerException.class, () -> member.updateOutstandingBalance(null));
+        assertEquals(debt, member.outstandingBalance());
     }
 }

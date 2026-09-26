@@ -1,6 +1,6 @@
 # Notas de entrega
 
-Proyecto incremental en Java 17. Las tres decisiones siguientes definen el comportamiento previsto; los casos de uso aún no están implementados.
+Proyecto incremental en Java 17. Las tres decisiones siguientes guían tanto los casos de uso implementados como los pendientes.
 
 ## Decisiones (3)
 
@@ -14,8 +14,12 @@ API REST, interfaz gráfica, autenticación y persistencia entre reinicios. Un p
 
 ## Incompleto conocido
 
-Están modelados `Title`, `Copy`, `Member`, `Loan` y `Hold`; el vencimiento y la ventana de recogida se calculan con políticas configurables. `LibraryService` sigue vacío: aún no hay asignación de copias, cola FIFO, renovación, cálculo de multas ni protección de la última copia frente a concurrencia. Para varias instancias, esa asignación necesitaría una transacción con bloqueo en PostgreSQL.
+Hay repositorios en memoria y un préstamo básico probado ante dos solicitudes simultáneas de la última copia. Sin ejemplares se devuelve un error: aún no se crea la reserva automáticamente. Faltan la cola FIFO operativa, devoluciones, recogidas, renovaciones y cálculo de multas. El bloqueo es local al repositorio de copias compartido; los repositorios por separado no ofrecen transacciones ni cubren varias instancias. En PostgreSQL se necesitaría una transacción con bloqueo de fila y restricción de préstamo activo único por copia.
+
+## Siguientes 30 minutos
+
+Implementar la solicitud de reserva cuando no haya copia, proteger su alta con el mismo bloqueo y probar duplicados y FIFO; después abordar la devolución y la asignación al primero de la cola.
 
 ## Uso de IA
 
-Delegué el análisis inicial del PDF, el esqueleto Maven/Java 17 y propuestas de tipos, políticas y tests para acelerar el arranque y detectar requisitos omitidos. Un resultado equivocado a nivel de diseño fue usar `0.20` (la multa del enunciado) como ejemplo en un test de `Money`: sugería que el valor monetario conocía esa regla. Lo detectamos al contrastarlo con el requisito de cambiar importes sin despliegue; cambiamos el test a importes genéricos y trasladamos la regla a `FinePolicy`. Verifiqué la compilación y los tests con `mvn test`, pero acepté provisionalmente el proveedor en memoria sin verificar aún su integración con `LibraryService` ni su comportamiento bajo concurrencia.
+Delegué el análisis inicial del PDF, el esqueleto Maven/Java 17 y propuestas de tipos, políticas y tests para acelerar el arranque y detectar requisitos omitidos. Un resultado equivocado a nivel de diseño fue usar `0.20` (la multa del enunciado) como ejemplo en un test de `Money`: sugería que el valor monetario conocía esa regla. Lo detectamos al contrastarlo con el requisito de cambiar importes sin despliegue; cambiamos el test a importes genéricos y trasladamos la regla a `FinePolicy`. Verifiqué el préstamo y la carrera por la última copia con `mvn test`, pero acepté provisionalmente el proveedor de políticas en memoria sin probar aún actualizaciones concurrentes ni su uso en renovaciones o multas.

@@ -23,6 +23,13 @@ Este documento orienta el diseño y los tests de la biblioteca de préstamos de 
 
 Relaciones relevantes: `Title 1 → N Copy`; `Title 1 → N Hold`; `Member 1 → N Loan/Hold`; `Copy 1 → 0..1 Loan activo`. La cola pertenece al título; el préstamo pertenece a una copia.
 
+## Contrato de repositorios en memoria
+
+- `save` sustituye la entidad por identificador (`upsert`); las validaciones de negocio y los duplicados de reservas se comprueban en el servicio.
+- Las búsquedas de identificadores inexistentes devuelven `Optional.empty()`; las consultas devuelven listas no modificables. Esto no convierte las entidades mutables contenidas en copias profundas.
+- `CopyRepository` consulta por título y disponibilidad; `LoanRepository` distingue préstamos activos por ausencia de devolución; `HoldRepository` obtiene reservas `WAITING`/`ASSIGNED` y ordena FIFO por creación e identificador en caso de empate.
+- `ConcurrentHashMap` protege operaciones individuales, no una transacción entre copias, préstamos y reservas. Toda modificación que compita por una copia o su cola debe usar el mismo bloqueo compartido durante la lectura, decisión y escritura; no basta con bloquear una instancia de `LibraryService`.
+
 ## Parámetros iniciales
 
 | Nivel | Plazo | Préstamos activos | Renovaciones |

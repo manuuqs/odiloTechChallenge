@@ -1,12 +1,13 @@
 package com.odilo.library.domain.model;
 
+import com.odilo.library.domain.exception.DomainException;
 import java.util.Objects;
 
 public final class Copy {
 
     private final CopyId id;
     private final TitleId titleId;
-    private CopyStatus status;
+    private volatile CopyStatus status;
 
     public Copy(CopyId id, TitleId titleId) {
         this.id = Objects.requireNonNull(id, "copy ID cannot be null");
@@ -24,5 +25,12 @@ public final class Copy {
 
     public CopyStatus status() {
         return status;
+    }
+
+    public synchronized void markOnLoan() {
+        if (status != CopyStatus.AVAILABLE) {
+            throw new DomainException("copy is not available for loan");
+        }
+        status = CopyStatus.ON_LOAN;
     }
 }

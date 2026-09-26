@@ -34,4 +34,8 @@ public class Member {
     public Money outstandingBalance() {
         return outstandingBalance;
     }
+
+    public void updateOutstandingBalance(Money amount) {
+        outstandingBalance = Objects.requireNonNull(amount, "outstanding balance cannot be null");
+    }
 }
