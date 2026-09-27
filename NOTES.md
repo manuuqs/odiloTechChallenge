@@ -32,7 +32,7 @@ También decidimos:
 ## Fuera de alcance
 
 API, interfaz, autenticación, pagos, almacenamiento duradero y configuración externa.
-La reserva se solicita aparte cuando `borrow` no encuentra copia. Cuando no hay copia disponible, borrow devuelve un error y no crea automáticamente una reserva. El socio puede solicitar el Hold explícitamente mediante placeHold.
+En este ejercicio no se incluye la capa HTTP/REST ni la integración con un sistema de autenticación real; la persistencia se simula con repositorios en memoria y el modelo de negocio permanece aislado del almacenamiento físico. Tampoco se cubren pagos reales, notificaciones, despliegue ni configuración operativa externa.
 
 ## Qué sé que está roto y entrego igualmente
 
