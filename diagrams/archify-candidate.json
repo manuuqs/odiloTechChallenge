@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Odilo Library System - Runtime Architecture",
+    "output": "library-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "primary-path", "label": "Primary borrow/return path", "focus": ["users", "api", "library-service", "copy-repo"], "note": "Follow a book borrow from user through the library service to copy state." },
+      { "id": "hold-queue", "label": "Hold queue and expiration", "focus": ["users", "api", "library-service", "hold-queue"], "note": "FIFO hold assignment, 48-hour retention, and expiration flow." },
+      { "id": "fine-policy", "label": "Overdue fines and blocking", "focus": ["users", "api", "library-service"], "note": "Debt > €10 blocks borrowing/renewal/queuing; fines charged on return." }
+    ]
+  },
+  "components": [
+    { "id": "users", "type": "external", "label": "Library Members", "sublabel": "Browser / App", "pos": [40, 300], "size": [120, 60] },
+    { "id": "api", "type": "backend", "label": "REST API", "sublabel": "Main class", "pos": [40, 150], "size": [120, 64], "tag": "Java 17 / Maven" },
+    { "id": "library-service", "type": "backend", "label": "Library Service", "sublabel": "In-memory core", "pos": [280, 220], "size": [130, 60] },
+    { "id": "copy-repo", "type": "database", "label": "Copy Repository", "sublabel": "In-memory maps", "pos": [280, 80], "size": [130, 60] },
+    { "id": "hold-queue", "type": "messagebus", "label": "Hold Queue", "sublabel": "FIFO waiting list", "pos": [520, 220], "size": [130, 60] },
+    { "id": "membership", "type": "security", "label": "Membership Tier", "sublabel": "Rules config", "pos": [520, 80], "size": [130, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "JVM Runtime", "wraps": ["api", "library-service", "copy-repo", "hold-queue", "membership"] }
+  ],
+  "connections": [
+    { "id": "users-to-api", "from": "users", "to": "api", "label": "HTTPS requests" },
+    { "id": "api-to-service", "from": "api", "to": "library-service", "label": "borrow/return/hold" },
+    { "id": "service-to-copies", "from": "library-service", "to": "copy-repo", "label": "copy state" },
+    { "id": "service-to-holdq", "from": "library-service", "to": "hold-queue", "label": "assign / fulfill hold", "labelAt": [410, 300] },
+    { "id": "service-to-member", "from": "library-service", "to": "membership", "label": "check tier rules" }
+  ]
+}
