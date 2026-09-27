@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 
-public final class Loan {
+public final class Loan implements Action{
 
     private final LoanId id;
     private final MemberId memberId;
@@ -75,5 +75,15 @@ public final class Loan {
         }
         dueAt = newDueAt;
         renewalCount++;
+    }
+
+    @Override
+    public boolean isLoan() {
+        return true;
+    }
+
+    @Override
+    public boolean isHold() {
+        return false;
     }
 }

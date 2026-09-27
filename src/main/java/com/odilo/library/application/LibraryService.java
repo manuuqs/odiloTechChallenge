@@ -1,17 +1,7 @@
 package com.odilo.library.application;
 
 import com.odilo.library.domain.exception.DomainException;
-import com.odilo.library.domain.model.Copy;
-import com.odilo.library.domain.model.CopyStatus;
-import com.odilo.library.domain.model.Hold;
-import com.odilo.library.domain.model.HoldId;
-import com.odilo.library.domain.model.HoldStatus;
-import com.odilo.library.domain.model.Loan;
-import com.odilo.library.domain.model.LoanId;
-import com.odilo.library.domain.model.Member;
-import com.odilo.library.domain.model.MemberId;
-import com.odilo.library.domain.model.Money;
-import com.odilo.library.domain.model.TitleId;
+import com.odilo.library.domain.model.*;
 import com.odilo.library.domain.policy.PolicyProvider;
 import com.odilo.library.domain.policy.TierPolicy;
 import com.odilo.library.domain.repository.CopyRepository;
@@ -52,7 +42,7 @@ public final class LibraryService {
     }
 
     //solicita un préstamo de una copia disponible de un título para un miembro
-    public Loan borrow(MemberId memberId, TitleId titleId) {
+    public Action borrow(MemberId memberId, TitleId titleId) {
         Objects.requireNonNull(memberId, "member ID cannot be null");
         Objects.requireNonNull(titleId, "title ID cannot be null");
 
@@ -82,19 +72,27 @@ public final class LibraryService {
                 throw new DomainException("the title has a waiting queue");
             }
 
-            Copy copy = copies.findAvailableByTitleId(titleId).stream()
+            Copy availableCopy = copies.findAvailableByTitleId(titleId).stream()
                     .min(Comparator.comparing(candidate -> candidate.id().value()))
-                    .orElseThrow(() -> new DomainException("no available copy; request a hold"));
-            if (loans.findActiveByCopyId(copy.id()).isPresent()) {
-                throw new DomainException("copy already has an active loan");
-            }
+                    .orElse(null);
 
-            Loan loan = new Loan(new LoanId(UUID.randomUUID().toString()), memberId, copy.id(),
-                    now, tierPolicy.dueAt(now));
-            copy.markOnLoan();
-            copies.save(copy);
-            loans.save(loan);
-            return loan;
+            if (availableCopy != null) {
+                if (!holds.findWaitingByTitleId(titleId).isEmpty()) {
+                    throw new DomainException("the title has a waiting queue");
+                }
+
+                Loan loan = new Loan(new LoanId(UUID.randomUUID().toString()), memberId, availableCopy.id(),
+                        now, tierPolicy.dueAt(now));
+                availableCopy.markOnLoan();
+                copies.save(availableCopy);
+                loans.save(loan);
+                return loan;
+
+//            if (loans.findActiveByCopyId(availableCopy.id()).isPresent()) {
+//                System.out.println("copy already has an active loan");
+//                return placeHold(memberId, titleId);
+            }
+            return placeHold(memberId, titleId);
         }
     }
 

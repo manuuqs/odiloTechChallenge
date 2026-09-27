@@ -94,7 +94,7 @@ class LibraryHoldServiceTest {
         copies.save(new Copy(new CopyId("copy-1"), TITLE));
         Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
         members.save(member);
-        Loan loan = service().borrow(member.id(), TITLE);
+        Loan loan = (Loan) service().borrow(member.id(), TITLE);
         member.updateOutstandingBalance(new Money(new BigDecimal("10.00")));
 
         Instant returnedAt = loan.dueAt().plus(1, ChronoUnit.DAYS);

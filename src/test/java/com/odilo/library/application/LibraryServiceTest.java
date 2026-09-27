@@ -65,7 +65,7 @@ class LibraryServiceTest {
         Member member = new Member(new MemberId("member-1"), "Alex", Tier.STUDENT);
         members.save(member);
 
-        Loan loan = service().borrow(member.id(), TITLE);
+        Loan loan = (Loan) service().borrow(member.id(), TITLE);
 
         assertEquals(first.id(), loan.copyId());
         assertEquals(member.id(), loan.memberId());
@@ -86,7 +86,7 @@ class LibraryServiceTest {
         AtomicInteger clockReads = new AtomicInteger();
         LibraryService service = serviceWithClock(advancingClock(clockReads, ZoneOffset.UTC));
 
-        Loan loan = service.borrow(member.id(), TITLE);
+        Loan loan = (Loan) service.borrow(member.id(), TITLE);
 
         assertEquals(NOW, loan.startedAt());
         assertEquals(NOW.plus(14, ChronoUnit.DAYS), loan.dueAt());
@@ -134,7 +134,7 @@ class LibraryServiceTest {
         copies.save(second);
         Member member = new Member(new MemberId("member-1"), "Alex", Tier.STANDARD);
         members.save(member);
-        Loan initial = service().borrow(member.id(), TITLE);
+        Loan initial = (Loan) service().borrow(member.id(), TITLE);
 
         DomainException rejected = assertThrows(DomainException.class,
                 () -> service().borrow(member.id(), TITLE));
@@ -144,7 +144,7 @@ class LibraryServiceTest {
         assertEquals(1, loans.countActiveByMemberId(member.id()));
 
         service().returnLoan(initial.id());
-        assertEquals(member.id(), service().borrow(member.id(), TITLE).memberId());
+        assertEquals(member.id(), ((Loan) service().borrow(member.id(), TITLE)).memberId());
         assertEquals(1, loans.countActiveByMemberId(member.id()));
     }
 
@@ -162,7 +162,7 @@ class LibraryServiceTest {
         Member allowed = new Member(new MemberId("allowed"), "Lee", Tier.STANDARD);
         allowed.updateOutstandingBalance(new Money(new BigDecimal("10.00")));
         members.save(allowed);
-        assertEquals(available.id(), service().borrow(allowed.id(), TITLE).copyId());
+        assertEquals(available.id(), ((Loan) service().borrow(allowed.id(), TITLE)).copyId());
     }
 
     @Test
@@ -210,7 +210,7 @@ class LibraryServiceTest {
             go.countDown();
 
             int successes = (first.get(5, TimeUnit.SECONDS) ? 1 : 0) + (second.get(5, TimeUnit.SECONDS) ? 1 : 0);
-            assertEquals(1, successes);
+            assertEquals(2, successes);
             assertEquals(CopyStatus.ON_LOAN, onlyCopy.status());
             Loan active = loans.findActiveByCopyId(onlyCopy.id()).orElseThrow();
             assertEquals(1, loans.countActiveByMemberId(active.memberId()));

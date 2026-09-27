@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 
-public final class Hold {
+public final class Hold implements Action{
 
     private final HoldId id;
     private final MemberId memberId;
@@ -108,5 +108,15 @@ public final class Hold {
             throw new IllegalArgumentException("forfeit time must be within the pickup window");
         }
         status = HoldStatus.EXPIRED;
+    }
+
+    @Override
+    public boolean isLoan() {
+        return false;
+    }
+
+    @Override
+    public boolean isHold() {
+        return true;
     }
 }

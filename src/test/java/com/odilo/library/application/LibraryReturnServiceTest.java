@@ -79,7 +79,7 @@ class LibraryReturnServiceTest {
 
         MemberId nextBorrower = new MemberId("member-2");
         members.save(new Member(nextBorrower, "Pat", Tier.STUDENT));
-        assertEquals(COPY_ID, service().borrow(nextBorrower, TITLE).copyId());
+        assertEquals(COPY_ID, ((Loan) service().borrow(nextBorrower, TITLE)).copyId());
     }
 
     @Test
@@ -258,8 +258,8 @@ class LibraryReturnServiceTest {
         MemberId secondMember = new MemberId("member-3");
         members.save(new Member(firstMember, "Pat", Tier.STANDARD));
         members.save(new Member(secondMember, "Lee", Tier.STUDENT));
-        Hold firstHold = service().placeHold(firstMember, TITLE);
-        Hold secondHold = service().placeHold(secondMember, TITLE);
+        Hold firstHold = (Hold) service().placeHold(firstMember, TITLE);
+        Hold secondHold = (Hold) service().placeHold(secondMember, TITLE);
         Instant returnedAt = loan.dueAt().plus(1, ChronoUnit.DAYS);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch go = new CountDownLatch(1);
@@ -306,7 +306,7 @@ class LibraryReturnServiceTest {
         titles.save(new Title(TITLE, "Clean Code"));
         copies.save(new Copy(COPY_ID, TITLE));
         members.save(new Member(BORROWER, "Alex", Tier.STANDARD));
-        return service().borrow(BORROWER, TITLE);
+        return (Loan) service().borrow(BORROWER, TITLE);
     }
 
     private LibraryService service() {

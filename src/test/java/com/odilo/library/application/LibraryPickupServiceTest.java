@@ -168,9 +168,9 @@ class LibraryPickupServiceTest {
 
         MemberId nextBorrower = SECOND;
         members.save(new Member(nextBorrower, "Lee", Tier.STANDARD));
-        Loan secondLoan = serviceAt(NOW).borrow(nextBorrower, TITLE);
+        Loan secondLoan = (Loan) serviceAt(NOW).borrow(nextBorrower, TITLE);
         member.updateOutstandingBalance(new Money(new BigDecimal("10.00")));
-        Hold nextHold = serviceAt(NOW).placeHold(FIRST, TITLE);
+        Hold nextHold = (Hold) serviceAt(NOW).placeHold(FIRST, TITLE);
         serviceAt(NOW).returnLoan(secondLoan.id());
 
         assertEquals(FIRST, serviceAt(NOW).collectHold(nextHold.id()).memberId());
@@ -185,7 +185,7 @@ class LibraryPickupServiceTest {
             TitleId otherTitle = new TitleId("other-title-" + i);
             titles.save(new Title(otherTitle, "Refactoring " + i));
             copies.save(new Copy(new CopyId("other-" + i), otherTitle));
-            Loan active = serviceAt(NOW).borrow(FIRST, otherTitle);
+            Loan active = (Loan) serviceAt(NOW).borrow(FIRST, otherTitle);
             if (i == 0) {
                 oneToReturn = active;
             }
@@ -206,7 +206,7 @@ class LibraryPickupServiceTest {
         Hold assigned = queue(FIRST, Tier.STANDARD);
         serviceAt(NOW).returnLoan(original.id());
         copies.save(new Copy(new CopyId("copy-2"), TITLE));
-        Loan otherCopy = serviceAt(NOW).borrow(FIRST, TITLE);
+        Loan otherCopy = (Loan) serviceAt(NOW).borrow(FIRST, TITLE);
         Hold next = queue(SECOND, Tier.STUDENT);
         Instant attemptedAt = NOW.plusSeconds(1);
 
@@ -241,7 +241,7 @@ class LibraryPickupServiceTest {
         assertEquals(CopyStatus.AVAILABLE, copies.findById(COPY_ID).orElseThrow().status());
         assertFalse(holds.existsActiveByMemberAndTitle(FIRST, TITLE));
         members.save(new Member(SECOND, "Lee", Tier.STUDENT));
-        assertEquals(COPY_ID, serviceAt(NOW.plusSeconds(2)).borrow(SECOND, TITLE).copyId());
+        assertEquals(COPY_ID, ( (Loan) serviceAt(NOW.plusSeconds(2)).borrow(SECOND, TITLE) ).copyId());
     }
 
     @Test
@@ -269,7 +269,7 @@ class LibraryPickupServiceTest {
         members.save(new Member(SECOND, "Lee", Tier.STUDENT));
         Instant deadline = first.expiresAt().orElseThrow();
 
-        Loan newLoan = serviceAt(deadline).borrow(SECOND, TITLE);
+        Loan newLoan = (Loan) serviceAt(deadline).borrow(SECOND, TITLE);
 
         assertEquals(COPY_ID, newLoan.copyId());
         assertEquals(HoldStatus.EXPIRED, first.status());
@@ -338,12 +338,12 @@ class LibraryPickupServiceTest {
         titles.save(new Title(TITLE, "Clean Code"));
         copies.save(new Copy(COPY_ID, TITLE));
         members.save(new Member(BORROWER, "Alex", Tier.STANDARD));
-        return serviceAt(NOW).borrow(BORROWER, TITLE);
+        return (Loan) serviceAt(NOW).borrow(BORROWER, TITLE);
     }
 
     private Hold queue(MemberId memberId, Tier tier) {
         members.save(new Member(memberId, "Reader", tier));
-        return serviceAt(NOW).placeHold(memberId, TITLE);
+        return (Hold) serviceAt(NOW).placeHold(memberId, TITLE);
     }
 
     private LibraryService serviceAt(Instant instant) {

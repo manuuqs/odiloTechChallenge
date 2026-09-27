@@ -261,7 +261,7 @@ class LibraryRenewalServiceTest {
         titles.save(new Title(TITLE, "Clean Code"));
         copies.save(new Copy(COPY_ID, TITLE));
         members.save(new Member(MEMBER_ID, "Alex", tier));
-        return serviceAt(NOW).borrow(MEMBER_ID, TITLE);
+        return (Loan) serviceAt(NOW).borrow(MEMBER_ID, TITLE);
     }
 
     private LibraryService serviceAt(Instant at) {
