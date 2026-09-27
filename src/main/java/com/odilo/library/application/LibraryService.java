@@ -37,6 +37,7 @@ public final class LibraryService {
     private final HoldRepository holds;
     private final PolicyProvider policies;
     private final Clock clock;
+    private final LibraryChecks checks;
 
     public LibraryService(TitleRepository titles, CopyRepository copies, MemberRepository members,
                           LoanRepository loans, HoldRepository holds, PolicyProvider policies, Clock clock) {
@@ -47,6 +48,7 @@ public final class LibraryService {
         this.holds = Objects.requireNonNull(holds, "hold repository cannot be null");
         this.policies = Objects.requireNonNull(policies, "policy provider cannot be null");
         this.clock = Objects.requireNonNull(clock, "clock cannot be null");
+        this.checks = new LibraryChecks(this.copies, this.loans, this.policies);
     }
 
     //solicita un préstamo de una copia disponible de un título para un miembro
@@ -66,15 +68,14 @@ public final class LibraryService {
             titles.findById(titleId).orElseThrow(() -> new DomainException("title not found"));
             expireOverdueHolds(titleId, now); // procesa las reservas asignadas cuyo plazo ya venció.
 
-            if (member.outstandingBalance().amount()
-                    .compareTo(policies.finePolicy().borrowingBlockThreshold().amount()) > 0) { //comprobamos deuda existente del miembro
+            if (checks.hasBlockingDebt(member)) { //comprobamos deuda existente del miembro
                 throw new DomainException("outstanding fines block new loans");
             }
             TierPolicy tierPolicy = policies.tierPolicy(member.tier());
-            if (loans.countActiveByMemberId(memberId) >= tierPolicy.maximumActiveLoans()) { //comprobar max prestamos permitidos por el nivel del miembro
+            if (checks.hasReachedLoanLimit(member, tierPolicy)) { //comprobar max prestamos permitidos por el nivel del miembro
                 throw new DomainException("member has reached the active-loan limit");
             }
-            if (hasActiveLoanForTitle(memberId, titleId)) { // un miembro no puede tener dos préstamos activos del mismo título
+            if (checks.hasActiveLoanForTitle(memberId, titleId)) { // un miembro no puede tener dos préstamos activos del mismo título
                 throw new DomainException("member already has this title on loan");
             }
             if (!holds.findWaitingByTitleId(titleId).isEmpty()) {
@@ -111,14 +112,13 @@ public final class LibraryService {
             titles.findById(titleId).orElseThrow(() -> new DomainException("title not found"));
             expireOverdueHolds(titleId, now); // procesa las reservas asignadas cuyo plazo ya venció.
 
-            if (member.outstandingBalance().amount()
-                    .compareTo(policies.finePolicy().borrowingBlockThreshold().amount()) > 0) {
+            if (checks.hasBlockingDebt(member)) {
                 throw new DomainException("outstanding fines block holds");
             }
             if (holds.existsActiveByMemberAndTitle(memberId, titleId)) {
                 throw new DomainException("member already has an active hold for this title");
             }
-            if (hasActiveLoanForTitle(memberId, titleId)) {
+            if (checks.hasActiveLoanForTitle(memberId, titleId)) {
                 throw new DomainException("member already has this title on loan");
             }
             if (!copies.findAvailableByTitleId(titleId).isEmpty()) {
@@ -143,12 +143,7 @@ public final class LibraryService {
             if (loan.returnedAt().isPresent()) {
                 throw new DomainException("loan has already been returned");
             }
-            Copy copy = copies.findById(loan.copyId())
-                    .orElseThrow(() -> new DomainException("loan copy not found"));
-            if (copy.status() != CopyStatus.ON_LOAN || loans.findActiveByCopyId(copy.id())
-                    .filter(active -> active.id().equals(loanId)).isEmpty()) {
-                throw new DomainException("copy and active loan are inconsistent");
-            }
+            Copy copy = checks.requireActiveLoanCopy(loan);
 
             Instant now = clock.instant();
             if (now.isBefore(loan.startedAt())) {
@@ -162,15 +157,7 @@ public final class LibraryService {
             Hold next = holds.findWaitingByTitleId(copy.titleId()).stream().findFirst().orElse(null);
             Instant expiration = null;
             if (next != null) {
-                if (now.isBefore(next.createdAt())) {
-                    throw new DomainException("hold cannot be assigned before its creation");
-                }
-                Duration pickupWindow = Objects.requireNonNull(policies.holdPickupWindow(),
-                        "hold pickup window cannot be null");
-                if (pickupWindow.isZero() || pickupWindow.isNegative()) {
-                    throw new DomainException("hold pickup window must be positive");
-                }
-                expiration = now.plus(pickupWindow); // la fecha de expiración de la reserva es la fecha actual más el tiempo de recogida permitido (cuarenta y ocho horas por defecto)
+                expiration = pickupExpiration(next, now);
             }
 
             // calculamos la multa por devolución tardía, si corresponde, y actualizamos el saldo pendiente del miembro
@@ -206,12 +193,7 @@ public final class LibraryService {
             if (loan.returnedAt().isPresent()) {
                 throw new DomainException("returned loan cannot be renewed");
             }
-            Copy copy = copies.findById(loan.copyId())
-                    .orElseThrow(() -> new DomainException("loan copy not found"));
-            if (copy.status() != CopyStatus.ON_LOAN || loans.findActiveByCopyId(copy.id())
-                    .filter(active -> active.id().equals(loanId)).isEmpty()) {
-                throw new DomainException("copy and active loan are inconsistent");
-            }
+            Copy copy = checks.requireActiveLoanCopy(loan);
             Member member = members.findById(loan.memberId())
                     .orElseThrow(() -> new DomainException("member not found"));
 
@@ -224,8 +206,7 @@ public final class LibraryService {
             if (!now.isBefore(loan.dueAt())) {
                 throw new DomainException("overdue loan cannot be renewed");
             }
-            if (member.outstandingBalance().amount()
-                    .compareTo(policies.finePolicy().borrowingBlockThreshold().amount()) > 0) {
+            if (checks.hasBlockingDebt(member)) {
                 throw new DomainException("outstanding fines block renewals");
             }
             if (holds.findWaitingByTitleId(copy.titleId()).stream()
@@ -266,19 +247,18 @@ public final class LibraryService {
            // Si el miembro tiene deuda superior a 10,00 €, pierde la reserva mediante forfeitAt.
             Member member = members.findById(hold.memberId())
                     .orElseThrow(() -> new DomainException("member not found"));
-            if (member.outstandingBalance().amount()
-                    .compareTo(policies.finePolicy().borrowingBlockThreshold().amount()) > 0) {
+            if (checks.hasBlockingDebt(member)) {
                 releaseHold(hold, copy, now, true);
                 throw new DomainException("outstanding fines forfeit the assigned hold");
             }
             // Si el miembro ya tiene un préstamo activo del mismo título, pierde la reserva mediante forfeitAt.
-            if (hasActiveLoanForTitle(member.id(), hold.titleId())) {
+            if (checks.hasActiveLoanForTitle(member.id(), hold.titleId())) {
                 releaseHold(hold, copy, now, true);
                 throw new DomainException("member already has this title on loan");
             }
             // Si el miembro ha alcanzado el límite de préstamos activos según su nivel de membresía, se rechaza temporalmente la recogida de la reserva y se le notifica que ha alcanzado el límite de préstamos activos.
             TierPolicy policy = policies.tierPolicy(member.tier());
-            if (loans.countActiveByMemberId(member.id()) >= policy.maximumActiveLoans()) {
+            if (checks.hasReachedLoanLimit(member, policy)) {
                 throw new DomainException("member has reached the active-loan limit");
             }
 
@@ -315,18 +295,6 @@ public final class LibraryService {
         return hold;
     }
 
-    private boolean hasActiveLoanForTitle(MemberId memberId, TitleId titleId) {
-        boolean alreadyBorrowed = false;
-        for (Loan loan : loans.findActiveByMemberId(memberId)) {
-            Copy loanCopy = copies.findById(loan.copyId())
-                    .orElseThrow(() -> new DomainException("active loan copy not found: " + loan.copyId().value()));
-            if (loanCopy.titleId().equals(titleId)) {
-                alreadyBorrowed = true;
-            }
-        }
-        return alreadyBorrowed;
-    }
-
     private Copy heldCopy(Hold hold) {
         Copy copy = copies.findById(hold.assignedCopyId().orElseThrow())
                 .orElseThrow(() -> new DomainException("assigned copy not found"));
@@ -341,15 +309,7 @@ public final class LibraryService {
         Hold next = holds.findWaitingByTitleId(current.titleId()).stream().findFirst().orElse(null);
         Instant nextExpiration = null;
         if (next != null) {
-            if (now.isBefore(next.createdAt())) {
-                throw new DomainException("hold cannot be assigned before its creation");
-            }
-            Duration pickupWindow = Objects.requireNonNull(policies.holdPickupWindow(),
-                    "hold pickup window cannot be null");
-            if (pickupWindow.isZero() || pickupWindow.isNegative()) {
-                throw new DomainException("hold pickup window must be positive");
-            }
-            nextExpiration = now.plus(pickupWindow);
+            nextExpiration = pickupExpiration(next, now);
         }
 
         if (forfeited) {
@@ -366,6 +326,18 @@ public final class LibraryService {
         }
         copies.save(copy);
         return Optional.ofNullable(next);
+    }
+
+    private Instant pickupExpiration(Hold hold, Instant now) {
+        if (now.isBefore(hold.createdAt())) {
+            throw new DomainException("hold cannot be assigned before its creation");
+        }
+        Duration pickupWindow = Objects.requireNonNull(policies.holdPickupWindow(),
+                "hold pickup window cannot be null");
+        if (pickupWindow.isZero() || pickupWindow.isNegative()) {
+            throw new DomainException("hold pickup window must be positive");
+        }
+        return now.plus(pickupWindow);
     }
 
     private void expireOverdueHolds(TitleId titleId, Instant now) {
