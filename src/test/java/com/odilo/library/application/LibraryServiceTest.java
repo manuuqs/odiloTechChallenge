@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.odilo.library.domain.exception.DomainException;
+import com.odilo.library.domain.model.Action;
 import com.odilo.library.domain.model.Copy;
 import com.odilo.library.domain.model.CopyId;
 import com.odilo.library.domain.model.CopyStatus;
@@ -166,7 +167,7 @@ class LibraryServiceTest {
     }
 
     @Test
-    void activeLoanLimitAndExistingWaitingQueueBlockNewBorrowing() {
+    void activeLoanLimitBlocksBorrowingAndExistingQueueAcceptsNewHold() {
         titles.save(new Title(TITLE, "Clean Code"));
         Copy available = new Copy(new CopyId("copy-1"), TITLE);
         copies.save(available);
@@ -187,7 +188,9 @@ class LibraryServiceTest {
         }
         Hold waiting = new Hold(new HoldId("hold-1"), new MemberId("other-member"), TITLE, NOW);
         holds.save(waiting);
-        assertThrows(DomainException.class, () -> service().borrow(member.id(), TITLE));
+        Hold secondWaiting = (Hold) service().borrow(member.id(), TITLE);
+        assertEquals(member.id(), secondWaiting.memberId());
+        assertEquals(2, holds.findWaitingByTitleId(TITLE).size());
         assertEquals(CopyStatus.AVAILABLE, available.status());
     }
 
@@ -204,13 +207,16 @@ class LibraryServiceTest {
         CountDownLatch go = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<Boolean> first = executor.submit(attemptBorrow(firstService, new MemberId("member-1"), ready, go));
-            Future<Boolean> second = executor.submit(attemptBorrow(secondService, new MemberId("member-2"), ready, go));
+            Future<Action> first = executor.submit(attemptBorrow(firstService, new MemberId("member-1"), ready, go));
+            Future<Action> second = executor.submit(attemptBorrow(secondService, new MemberId("member-2"), ready, go));
             assertTrue(ready.await(5, TimeUnit.SECONDS));
             go.countDown();
 
-            int successes = (first.get(5, TimeUnit.SECONDS) ? 1 : 0) + (second.get(5, TimeUnit.SECONDS) ? 1 : 0);
-            assertEquals(2, successes);
+            Action firstAction = first.get(5, TimeUnit.SECONDS);
+            Action secondAction = second.get(5, TimeUnit.SECONDS);
+            assertEquals(1, (firstAction instanceof Loan ? 1 : 0) + (secondAction instanceof Loan ? 1 : 0));
+            assertEquals(1, (firstAction instanceof Hold ? 1 : 0) + (secondAction instanceof Hold ? 1 : 0));
+            assertEquals(1, holds.findWaitingByTitleId(TITLE).size());
             assertEquals(CopyStatus.ON_LOAN, onlyCopy.status());
             Loan active = loans.findActiveByCopyId(onlyCopy.id()).orElseThrow();
             assertEquals(1, loans.countActiveByMemberId(active.memberId()));
@@ -224,19 +230,17 @@ class LibraryServiceTest {
         }
     }
 
-    private Callable<Boolean> attemptBorrow(LibraryService service, MemberId memberId,
-                                            CountDownLatch ready, CountDownLatch go) {
+    private Callable<Action> attemptBorrow(LibraryService service, MemberId memberId,
+                                             CountDownLatch ready, CountDownLatch go) {
         return () -> {
             ready.countDown();
             if (!go.await(5, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("other borrowing request did not start");
             }
             try {
-                service.borrow(memberId, TITLE);
-                return true;
-            } catch (DomainException noAvailableCopy) {
-                assertEquals("no available copy; request a hold", noAvailableCopy.getMessage());
-                return false;
+                return service.borrow(memberId, TITLE);
+            } catch (DomainException rejected) {
+                throw new AssertionError("both eligible members should get a loan or hold", rejected);
             }
         };
     }

@@ -68,19 +68,12 @@ public final class LibraryService {
             if (checks.hasActiveLoanForTitle(memberId, titleId)) { // un miembro no puede tener dos préstamos activos del mismo título
                 throw new DomainException("member already has this title on loan");
             }
-            if (!holds.findWaitingByTitleId(titleId).isEmpty()) {
-                throw new DomainException("the title has a waiting queue");
-            }
-
             Copy availableCopy = copies.findAvailableByTitleId(titleId).stream()
                     .min(Comparator.comparing(candidate -> candidate.id().value()))
                     .orElse(null);
 
-            if (availableCopy != null) {
-                if (!holds.findWaitingByTitleId(titleId).isEmpty()) {
-                    throw new DomainException("the title has a waiting queue");
-                }
-
+            // Existing waiters have priority, so new requests join the tail instead of taking an available copy.
+            if (availableCopy != null && holds.findWaitingByTitleId(titleId).isEmpty()) {
                 Loan loan = new Loan(new LoanId(UUID.randomUUID().toString()), memberId, availableCopy.id(),
                         now, tierPolicy.dueAt(now));
                 availableCopy.markOnLoan();
@@ -88,9 +81,6 @@ public final class LibraryService {
                 loans.save(loan);
                 return loan;
 
-//            if (loans.findActiveByCopyId(availableCopy.id()).isPresent()) {
-//                System.out.println("copy already has an active loan");
-//                return placeHold(memberId, titleId);
             }
             return placeHold(memberId, titleId);
         }
@@ -110,7 +100,7 @@ public final class LibraryService {
             titles.findById(titleId).orElseThrow(() -> new DomainException("title not found"));
             expireOverdueHolds(titleId, now); // procesa las reservas asignadas cuyo plazo ya venció.
 
-            if (checks.hasBlockingDebt(member)) {
+            if (checks.hasBlockingDebt(member)) {  ///saldo multas pendientes
                 throw new DomainException("outstanding fines block holds");
             }
             if (holds.existsActiveByMemberAndTitle(memberId, titleId)) {
@@ -119,7 +109,8 @@ public final class LibraryService {
             if (checks.hasActiveLoanForTitle(memberId, titleId)) {
                 throw new DomainException("member already has this title on loan");
             }
-            if (!copies.findAvailableByTitleId(titleId).isEmpty()) {
+            if (!copies.findAvailableByTitleId(titleId).isEmpty()
+                    && holds.findWaitingByTitleId(titleId).isEmpty()) {
                 throw new DomainException("copy available; borrow instead");
             }
 
@@ -180,7 +171,8 @@ public final class LibraryService {
         }
     }
 
-    // renueva un préstamo activo, si el préstamo está vencido, si el miembro tiene deuda superior a 10,00 €,
+    // renueva un préstamo activo, si el préstamo está vencido;
+    // si el miembro tiene deuda superior a 10,00 €,
     // si otro miembro tiene una reserva pendiente de la misma obra o si se ha alcanzado el límite de renovaciones según el nivel del miembro, se lanza una excepción
     public Loan renew(LoanId loanId) {
         Objects.requireNonNull(loanId, "loan ID cannot be null");

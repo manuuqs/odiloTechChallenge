@@ -78,6 +78,10 @@ final class ConcurrentDemo {
         int rejections = (int) borrowOutcomes.stream()
                 .filter(outcome -> outcome.rejection() != null)
                 .count();
+        if (acceptedHolds != contenders.size() - 1 || rejections != 0
+                || demo.holds().findWaitingByTitleId(title.id()).size() != contenders.size() - 1) {
+            throw new IllegalStateException("todos los solicitantes sin copia deben quedar en la cola FIFO");
+        }
         if (acceptedHolds + rejections + 1 != borrowOutcomes.size()) {
             throw new IllegalStateException("la suma de resultados no coincide con el número de peticiones");
         }
@@ -87,39 +91,23 @@ final class ConcurrentDemo {
         System.out.printf("  Comprobación: 1 préstamo, %d reservas, %d rechazadas; copia %s, préstamos activos %d%n",
                 acceptedHolds, rejections, copy.status(), activeLoans);
 
-        List<Member> queueCandidates = contenders.stream()
-                .filter(member -> !member.id().equals(firstLoan.memberId()))
-                .filter(member -> !demo.holds().existsActiveByMemberAndTitle(member.id(), title.id()))
-                .toList();
-        if (queueCandidates.size() < 2) {
-            throw new IllegalStateException("faltan dos miembros distintos para la cola");
+        List<Hold> waitingHolds = demo.holds().findWaitingByTitleId(title.id());
+        if (waitingHolds.size() < 2) {
+            throw new IllegalStateException("faltan reservas creadas por borrow para continuar la demo");
         }
-        Member firstWaiting = queueCandidates.get(0);
-        Member secondWaiting = queueCandidates.get(1);
-        int beforeWaiting = demo.holds().findWaitingByTitleId(title.id()).size();
-        Instant holdTime = START.plusSeconds(1);
-        System.out.printf("%n[2] Dos miembros distintos quedan en cola FIFO a las %s%n", holdTime);
+        Hold firstHold = waitingHolds.get(0);
+        Hold secondHold = waitingHolds.get(1);
+        Member firstWaiting = demo.members().findById(firstHold.memberId()).orElseThrow();
+        Member secondWaiting = demo.members().findById(secondHold.memberId()).orElseThrow();
+        System.out.println("\n[2] Se verifica que las solicitudes restantes ya están en cola FIFO");
         printSnapshot("Antes", demo, title, contenders, null);
-
-        Hold firstHold = demo.at(holdTime).placeHold(firstWaiting.id(), title.id());
-        Hold secondHold = demo.at(holdTime.plusSeconds(1)).placeHold(secondWaiting.id(), title.id());
-
-        int afterWaiting = demo.holds().findWaitingByTitleId(title.id()).size();
-        if (afterWaiting != beforeWaiting + 2) {
-            throw new IllegalStateException("no se crearon las dos reservas esperadas: antes=" + beforeWaiting + ", despues=" + afterWaiting);
-        }
         List<Outcome<Hold>> holdOutcomes = List.of(
                 new Outcome<>(firstHold, null),
                 new Outcome<>(secondHold, null));
-        Hold hold = demo.holds().findWaitingByTitleId(title.id()).stream()
-                .filter(candidate -> candidate.memberId().equals(firstWaiting.id())
-                        || candidate.memberId().equals(secondWaiting.id()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("no aparece ninguna reserva de la cola"));
-        printOutcomes(List.of(firstWaiting.name() + " petición 1", secondWaiting.name() + " petición 2"), holdOutcomes);
-        printSnapshot("Despues", demo, title, contenders, hold);
-        System.out.printf("  Comprobación: %d reservas creadas; cola %d%n",
-                afterWaiting - beforeWaiting, demo.holds().findWaitingByTitleId(title.id()).size());
+        printOutcomes(List.of(firstWaiting.name() + " posición 1", secondWaiting.name() + " posición 2"), holdOutcomes);
+        printSnapshot("Despues", demo, title, contenders, secondHold);
+        System.out.printf("  Comprobación: %d solicitudes en cola; primera posición %s%n",
+                waitingHolds.size(), firstWaiting.name());
 
         Hold expectedAssigned = demo.holds().findWaitingByTitleId(title.id()).stream()
                 .findFirst()
@@ -186,15 +174,12 @@ final class ConcurrentDemo {
                     throw new IllegalStateException("tipo de acción no esperado: " + action);
                 }
             } else {
-                String rejection = outcome.rejection();
-                if (!"the title has a waiting queue".equals(rejection)) {
-                    throw new IllegalStateException("rechazo inesperado: " + rejection);
-                }
-                rejectedCount++;
+                throw new IllegalStateException("la solicitud debía obtener un préstamo o entrar en cola: "
+                        + outcome.rejection());
             }
         }
-        if (loanCount != 1 || holdCount + rejectedCount != outcomes.size() - 1) {
-            throw new IllegalStateException("se esperaba 1 préstamo y el resto como reservas o rechazos, pero hubo "
+        if (loanCount != 1 || holdCount != outcomes.size() - 1 || rejectedCount != 0) {
+            throw new IllegalStateException("se esperaba 1 préstamo y el resto como reservas, pero hubo "
                     + loanCount + " préstamos, " + holdCount + " reservas y " + rejectedCount + " rechazos");
         }
         return winner;
